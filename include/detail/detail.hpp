@@ -78,6 +78,14 @@ namespace detail
         AT& alloc_;
         pointer ptr_;
     };
+
+    template<typename T>
+    typename std::enable_if<sizeof(T), std::true_type>::type
+        _is_complete_helper_chk(T*);
+    std::false_type _is_complete_helper_chk(...);
+
+    template<typename T, bool value = decltype(_is_complete_helper_chk((typename std::decay<T>::type*)nullptr))::value>
+    struct is_complete : std::integral_constant<bool, value> {};
 }
 
 template<typename traits_type, typename impl_type, typename AT>
@@ -134,13 +142,30 @@ struct detail::traits::base
         return ptr_type(ap.release(), std::move(a));
     }
 
-    static void       destroy (alloc_type& a, pointer p                       ) { return traits_->do_destroy  (a, p                 ); }
-    static void        assign (               pointer p, impl_type const& from) { return traits_->do_assign   (   p,           from ); }
-    static void        assign (               pointer p, impl_type     && from) { return traits_->do_assign   (   p, std::move(from)); }
-    static void     construct (alloc_type& a, void*   p, impl_type const& from) { return traits_->do_construct(a, p,           from ); }
-    static void     construct (alloc_type& a, void*   p, impl_type     && from) { return traits_->do_construct(a, p, std::move(from)); }
-    static ptr_type      make (alloc_type& a,            impl_type const& from) { return traits_->do_make     (a,              from ); }
-    static ptr_type      make (alloc_type& a,            impl_type     && from) { return traits_->do_make     (a,    std::move(from)); }
+    template <typename T, typename is_complete_t = is_complete<T>>
+    typename std::enable_if<std::is_same<typename std::decay<T>::type, impl_type>::value>::type
+    static destroy   (alloc_type& a, T*      p          )
+    {
+        return destroy_fwd  (a, p                       , is_complete_t());
+    }
+    template <typename T, typename is_complete_t = is_complete<T>>
+    typename std::enable_if<std::is_same<typename std::decay<T>::type, impl_type>::value>::type
+    static assign    (               pointer p, T&& from)
+    {
+        return assign_fwd   (  p, std::forward<T>(from), is_complete_t());
+    }
+    template <typename T, typename is_complete_t = is_complete<T>>
+    typename std::enable_if<std::is_same<typename std::decay<T>::type, impl_type>::value>::type
+    static construct (alloc_type& a, void*   p, T&& from)
+    {
+        return construct_fwd(a, p, std::forward<T>(from), is_complete_t());
+    }
+    template <typename T, typename is_complete_t = is_complete<T>>
+    typename std::enable_if<std::is_same<typename std::decay<T>::type, impl_type>::value, ptr_type>::type
+    static make      (alloc_type& a,            T&& from)
+    {
+        return make_fwd     (a, std::forward<T>(from), is_complete_t());
+    }
 
     protected:
 
@@ -159,6 +184,66 @@ struct detail::traits::base
     virtual void     do_construct (alloc_type&, void*, impl_type&& ) const =0;
     virtual ptr_type      do_make (alloc_type&, impl_type const&) const =0;
     virtual ptr_type      do_make (alloc_type&, impl_type&& ) const =0;
+
+    // Helper methods for incomplete types that just call through the vtable
+    template <typename T>
+    typename std::enable_if<std::is_same<T, impl_type>::value>::type
+    static destroy_fwd   (alloc_type& a, T*      p,           std::false_type)
+    {
+        return traits_->do_destroy(a, p);
+    }
+
+    template <typename T>
+    typename std::enable_if<std::is_same<typename std::decay<T>::type, impl_type>::value>::type
+    static assign_fwd    (               pointer p, T&& from, std::false_type)
+    {
+        return traits_->do_assign(p, std::forward<T>(from));
+    }
+
+    template <typename T>
+    typename std::enable_if<std::is_same<typename std::decay<T>::type, impl_type>::value>::type
+    static construct_fwd (alloc_type& a, void*   p, T&& from, std::false_type)
+    {
+        return traits_->do_construct(a, p, std::forward<T>(from));
+    }
+
+    template <typename T>
+    typename std::enable_if<std::is_same<typename std::decay<T>::type, impl_type>::value, ptr_type>::type
+    static make_fwd      (alloc_type& a,            T&& from, std::false_type)
+    {
+        return traits_->do_make(a, std::forward<T>(from));
+    }
+
+    // Helper methods for complete types that downcast to the (final) traits type.
+    // This gives the compiler enough information to completely eliminate the vtable and gives it
+    // the opportunity to fully inline calls to impl_type's special member functions.
+    template <typename T>
+    typename std::enable_if<std::is_same<T, impl_type>::value>::type
+    static destroy_fwd   (alloc_type& a, T*      p,           std::true_type)
+    {
+        return static_cast<const traits_type&>(*traits_).do_destroy(a, p);
+    }
+
+    template <typename T>
+    typename std::enable_if<std::is_same<typename std::decay<T>::type, impl_type>::value>::type
+    static assign_fwd    (               pointer p, T&& from, std::true_type)
+    {
+        return static_cast<const traits_type&>(*traits_).do_assign(p, std::forward<T>(from));
+    }
+
+    template <typename T>
+    typename std::enable_if<std::is_same<typename std::decay<T>::type, impl_type>::value>::type
+    static construct_fwd (alloc_type& a, void*   p, T&& from, std::true_type)
+    {
+        return static_cast<const traits_type&>(*traits_).do_construct(a, p, std::forward<T>(from));
+    }
+
+    template <typename T>
+    typename std::enable_if<std::is_same<typename std::decay<T>::type, impl_type>::value, ptr_type>::type
+    static make_fwd      (alloc_type& a,            T&& from, std::true_type)
+    {
+        return static_cast<const traits_type&>(*traits_).do_make(a, std::forward<T>(from));
+    }
 
     static void construct_singleton()
     {
