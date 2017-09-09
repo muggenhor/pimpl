@@ -59,6 +59,10 @@ project(impl_ptr CXX)
 enable_testing()
 
 if (HUNTER_ENABLED)
+    hunter_add_package(Sugar)
+    include(${SUGAR_ROOT}/cmake/Sugar)
+    include(sugar_files)
+    include(sugar_include)
     hunter_add_package(Boost)
     find_package(Boost 1.57 CONFIG REQUIRED)
 else ()
@@ -104,18 +108,22 @@ target_link_libraries(${PROJECT_NAME}
         Boost::boost
 )
 
-add_executable(test_impl_ptr
-    test/allocator.hpp
-    test/impl.cpp
-    test/impl_always_inplace.cpp
-    test/impl_copied.cpp
-    test/impl_inplace.cpp
-    test/impl_poly.cpp
-    test/impl_shared.cpp
-    test/impl_unique.cpp
-    test/main.cpp
-    test/test.hpp
-)
-target_link_libraries(test_impl_ptr PRIVATE ${PROJECT_NAME})
+if (HUNTER_ENABLED)
+    sugar_include(test)
+else ()
+    add_executable(test_impl_ptr
+        test/allocator.hpp
+        test/impl.cpp
+        test/impl_always_inplace.cpp
+        test/impl_copied.cpp
+        test/impl_inplace.cpp
+        test/impl_poly.cpp
+        test/impl_shared.cpp
+        test/impl_unique.cpp
+        test/main.cpp
+        test/test.hpp
+    )
+    target_link_libraries(test_impl_ptr PRIVATE ${PROJECT_NAME})
 
-add_test(NAME impl_ptr COMMAND test_impl_ptr)
+    add_test(NAME impl_ptr COMMAND test_impl_ptr)
+endif ()
