@@ -36,11 +36,34 @@ endif()
 # Prepend CMake's auto-detected required C++ flags
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS_INIT} ${CMAKE_CXX_FLAGS}")
 
+###############################################
+# Introduction to Hunter
+#
+# Hunter is a dependency manager for CMake. It automatically downloads, configures and compiles
+# libraries that your program depends on.
+# Hunter is clever enough to understand the toolchain file you have specified on the command line, and
+# build dependencies (including quite demanding ones like boost, openssl etc) with the correct command line arguments.
+# Tt then caches the build by target, toolchain and configuration so that you never have to build that
+# configuration again.
+# see https://github.com/ruslo/hunter
+#
+# If you don't want to use Hunter then simply define the variable HUNTER_ENABLED=OFF on the CMAKE command line
+include(cmake/HunterGate.cmake)
+HunterGate(
+        URL "https://github.com/ruslo/hunter/archive/v0.19.96.tar.gz"
+        SHA1 "8316d0491ee03a918d2e0973aaf5878d9bcfe472"
+)
+
 project(impl_ptr CXX)
 
 enable_testing()
 
-find_package(Boost 1.57 REQUIRED)
+if (HUNTER_ENABLED)
+    hunter_add_package(Boost)
+    find_package(Boost 1.57 CONFIG REQUIRED)
+else ()
+    find_package(Boost 1.57 REQUIRED)
+endif ()
 
 # Workaround for bug in FindBoost.cmake
 if(NOT TARGET Boost::boost AND CMAKE_VERSION VERSION_LESS "3.6")
